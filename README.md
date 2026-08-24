@@ -21,6 +21,8 @@ Customer onboarding crosses document processing, external providers, policy rule
 
 Use Mastra Studio, call the API, or open the included test portal to try three paths: a standard application, an application that pauses for missing information, and a sanctions candidate that requires explicit human review.
 
+Mastra Studio, the API, and the portal are equal entry points to the same durable workflow.
+
 You can connect this workflow to React, Next.js, or Vue applications with the [Mastra Client SDK](https://mastra.ai/en/docs/deployment/client), or use agentic UI libraries such as AI SDK UI, CopilotKit, and Assistant UI.
 
 ## Prerequisites
@@ -35,29 +37,13 @@ You can connect this workflow to React, Next.js, or Vue applications with the [M
    - Run `npx create-mastra@latest --template kyc-customer-onboarding` and name the project `kyc-customer-onboarding` when prompted.
 2. **Add your API key**
    - Run `cd kyc-customer-onboarding && cp .env.example .env`, then add `OPENAI_API_KEY` to `.env`.
-3. **Start the development server**
-   - Run `npm run dev` and open [localhost:4111](http://localhost:4111).
+3. **Start the complete development environment**
+   - Run `npm run dev` to start the portal, API, and Mastra Studio together.
+   - Open the portal at [http://127.0.0.1:5173](http://127.0.0.1:5173), Mastra Studio at [http://127.0.0.1:4112](http://127.0.0.1:4112), or the API documentation at [http://127.0.0.1:4111/openapi.json](http://127.0.0.1:4111/openapi.json).
 
 Select **KYC Onboarding Agent** and ask it to start the low-risk onboarding scenario. The workflow completes intake, extraction, four parallel checks, evidence aggregation, and deterministic risk assessment before pausing for compliance review.
 
 The sample inputs in [`inputs-sample`](inputs-sample) cover the standard, missing-information, and sanctions-review paths.
-
-## Run it your way
-
-Mastra Studio, the API, and the portal are equal entry points to the same workflow:
-
-```bash
-# Mastra Studio
-npm run dev
-
-# HTTP API
-npm run dev:api
-
-# Example React portal
-npm run dev:portal
-```
-
-Open the portal at [http://127.0.0.1:5173](http://127.0.0.1:5173) or inspect OpenAPI at [http://127.0.0.1:4111/openapi.json](http://127.0.0.1:4111/openapi.json).
 
 ## How it works
 

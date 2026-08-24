@@ -11,10 +11,11 @@
     "portal"
   ],
   "scripts": {
-    "dev": "node --env-file-if-exists=.env --import tsx scripts/start-studio.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx scripts/start-development.ts",
     "start": "mastra start",
     "dev:api": "node --env-file-if-exists=.env --import tsx src/main.ts",
     "dev:portal": "npm run dev --workspace portal",
+    "dev:studio": "node --env-file-if-exists=.env --import tsx scripts/start-studio.ts --port 4112 --data-root ./data/studio",
     "build": "npm run build:mastra && npm run build:portal",
     "build:mastra": "node --import tsx scripts/build-mastra.ts",
     "build:types": "tsc -p tsconfig.build.json",

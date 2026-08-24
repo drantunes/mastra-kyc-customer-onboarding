@@ -191,7 +191,7 @@ const scenarios = Object.freeze({
       'Name: Morgan Example',
       'Date of birth: 1990-01-01',
       'Document number: SYNTHETIC-002',
-      'Expiration date: NOT PRESENT',
+      'Expiration date: MISSING',
       'Nationality: US',
     ],
     {

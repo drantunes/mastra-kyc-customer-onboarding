@@ -562,13 +562,17 @@ export const createListPendingKycActionsTool = (dependencies: ResumeKycDependenc
 export const createSubmitKycInformationTool = (dependencies: ResumeKycDependencies) =>
   createTool({
     id: 'submit-kyc-information-v1',
-    description: 'Submit one bundled synthetic response to a missing-information action in this Studio thread',
+    description:
+      'Submit one response to a missing-information action in this Studio thread. A corrected application is a partial update containing only fields requested by the pending action; do not request or repeat application data already stored.',
     inputSchema: z
       .object({
         caseReference: caseReferenceSchema.optional(),
         responseOption: responseOptionSchema,
         fixtureResponseQuality: fixtureResponseQualitySchema,
-        applicationCorrections: applicationCorrectionsSchema.nullable().optional(),
+        applicationCorrections: applicationCorrectionsSchema
+          .describe('Partial application update containing only fields requested by the pending action')
+          .nullable()
+          .optional(),
         intent: resumeIntentSchema,
       })
       .strict(),
