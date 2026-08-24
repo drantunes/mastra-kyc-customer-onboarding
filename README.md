@@ -1,3 +1,5 @@
+![KYC customer onboarding workflow](./cover.png)
+
 # Mastra KYC and Customer Onboarding
 
 Turn a KYC application into an auditable, review-ready decision flow with durable execution, typed provider boundaries, parallel checks, and human approval built in.
