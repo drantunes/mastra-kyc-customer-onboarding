@@ -10,15 +10,25 @@ const argument = (name: string): string | undefined => {
 const cliEntry = fileURLToPath(import.meta.resolve('mastra'));
 const studioPort = process.env.STUDIO_PORT ?? argument('--port') ?? '4111';
 const studioDataRoot = process.env.STUDIO_DATA_ROOT ?? argument('--data-root');
+const primaryDataRoot = resolve(process.env.DEMO_DATA_ROOT ?? './data');
+const studioDataPath = studioDataRoot === undefined ? undefined : resolve(studioDataRoot);
+const studioAnalyticsPath =
+  process.env.STUDIO_ANALYTICS_PATH ??
+  (studioDataPath === undefined
+    ? undefined
+    : resolve(
+        studioDataPath === primaryDataRoot ? resolve(studioDataPath, 'studio') : studioDataPath,
+        'analytics.duckdb',
+      ));
 const studioStorageEnvironment =
-  studioDataRoot === undefined
+  studioDataPath === undefined || studioAnalyticsPath === undefined
     ? {}
     : {
-        DEMO_DATA_ROOT: studioDataRoot,
-        LIBSQL_DOMAIN_URL: `file:${resolve(studioDataRoot, 'kyc.db')}`,
-        LIBSQL_MASTRA_URL: `file:${resolve(studioDataRoot, 'mastra.db')}`,
-        DUCKDB_URL: resolve(studioDataRoot, 'analytics.duckdb'),
-        DOCUMENT_STORAGE_PATH: resolve(studioDataRoot, 'documents'),
+        DEMO_DATA_ROOT: studioDataPath,
+        LIBSQL_DOMAIN_URL: `file:${resolve(studioDataPath, 'kyc.db')}`,
+        LIBSQL_MASTRA_URL: `file:${resolve(studioDataPath, 'mastra.db')}`,
+        DUCKDB_URL: studioAnalyticsPath,
+        DOCUMENT_STORAGE_PATH: resolve(studioDataPath, 'documents'),
       };
 const telemetryDisabledEnvironment = {
   ...process.env,
