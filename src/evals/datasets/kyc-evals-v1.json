@@ -44,7 +44,7 @@
       "tags": ["low-risk", "happy-path"],
       "input": {
         "fixtureScenarioId": "low-risk",
-        "fixtureDigest": "9434b543174a402cfa98e18f9793ceccc55df98aecb0e1db1bf92f7eca40928d",
+        "fixtureDigest": "4bb155d7885c07692439ac041b2768a9f029b1cb2b98c762e0600dd3049df31d",
         "repeatCount": 2
       },
       "groundTruth": {

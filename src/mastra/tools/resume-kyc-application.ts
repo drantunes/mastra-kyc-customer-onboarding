@@ -186,9 +186,7 @@ export const validateInformationResponse = (
   }
 };
 
-const normalizeApplicationCorrections = (
-  corrections: ApplicationCorrections | null,
-): ApplicationCorrections | null => {
+const normalizeApplicationCorrections = (corrections: ApplicationCorrections | null): ApplicationCorrections | null => {
   if (corrections === null) return null;
   return applicationCorrectionsSchema.parse(
     Object.fromEntries(Object.entries(corrections).filter(([, value]) => value !== undefined)),
