@@ -1,4 +1,4 @@
-import type { Client } from '@libsql/client';
+import { createClient, type Client } from '@libsql/client';
 import type { DuckDBInstance } from '@duckdb/node-api';
 import { LibSQLStore } from '@mastra/libsql';
 
@@ -6,6 +6,7 @@ import type { AppConfig } from '../config/load-config.js';
 import { backfillLegacyAnalyticsCaseFacts } from './analytics-case-backfill.js';
 import { initializeAnalyticsDatabase } from './analytics.js';
 import { initializeOperationalDatabase } from './operational.js';
+import { KycObservabilityLibSQL } from './observability-discovery.js';
 import { ensureParentDirectory } from './paths.js';
 import { kycRetentionConfig, runBoundedRetentionPrune } from './retention.js';
 
@@ -38,6 +39,12 @@ export const initializeStorage = async (
     url: config.storage.mastraUrl,
     retention: kycRetentionConfig,
   });
+  const observabilityDiscoveryClient = createClient({
+    url: config.storage.mastraUrl,
+    timeout: 5_000,
+  });
+  const observability = new KycObservabilityLibSQL(observabilityDiscoveryClient);
+  mastra.stores.observability = observability;
   await mastra.init();
   if (options.pruneOnStartup !== false) await runBoundedRetentionPrune(mastra);
 
@@ -53,6 +60,8 @@ export const initializeStorage = async (
       return true;
     },
     close: () => {
+      observability.close();
+      void mastra.close();
       operational.close();
       analytics.closeSync();
     },
