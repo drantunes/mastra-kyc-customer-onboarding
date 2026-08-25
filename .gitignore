@@ -18,6 +18,8 @@ data/opensanctions-campaign-ledger.json.lock/
 **/data/*.duckdb
 **/data/*.duckdb.*
 **/data/documents/*
+**/data/studio/
+package-lock.json
 *.log
 .DS_Store
 .idea/

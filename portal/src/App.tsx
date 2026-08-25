@@ -6,6 +6,7 @@ import type {
   DemoSession,
   MetricsSummary,
   ReviewQueueItem,
+  SubmitInformationRequest,
   UploadDocumentResult,
 } from '../../src/contracts/http/public-api.js';
 import { useCaseEvents } from './api/case-events.js';
@@ -25,6 +26,37 @@ const statusLabel = (status: string): string => status.toLowerCase().replaceAll(
 const formString = (data: FormData, key: string): string => {
   const value = data.get(key);
   return typeof value === 'string' ? value : '';
+};
+
+type InformationResponseOption = SubmitInformationRequest['responseOption'];
+
+const correctionItems = new Set([
+  'FULL_NAME',
+  'DATE_OF_BIRTH',
+  'DOCUMENT_NUMBER',
+  'EXPIRATION_DATE',
+  'RESIDENTIAL_ADDRESS',
+]);
+
+const responseOptionLabels: Record<InformationResponseOption, string> = {
+  CORRECTED_APPLICATION: 'Corrected application',
+  IDENTITY_DOCUMENT: 'Identity document',
+  IDENTITY_DOCUMENT_BACK: 'Identity document back',
+  PROOF_OF_ADDRESS: 'Proof of address',
+  READABLE_DOCUMENT: 'Readable replacement',
+};
+
+const responseOptionsFor = (requestedItems: readonly string[]): InformationResponseOption[] => {
+  const requested = new Set(requestedItems);
+  const options: InformationResponseOption[] = [];
+  if (requestedItems.some(item => correctionItems.has(item))) options.push('CORRECTED_APPLICATION');
+  if (requested.has('IDENTITY_DOCUMENT')) options.push('IDENTITY_DOCUMENT');
+  if (requested.has('IDENTITY_DOCUMENT_BACK')) options.push('IDENTITY_DOCUMENT_BACK');
+  if (requested.has('PROOF_OF_ADDRESS')) options.push('PROOF_OF_ADDRESS');
+  if (requested.has('DOCUMENT_READABILITY') || requested.has('READABLE_DOCUMENT')) {
+    options.push('READABLE_DOCUMENT');
+  }
+  return options;
 };
 
 const PersonaPicker = ({ busy, onSelect }: Readonly<{ busy: boolean; onSelect: (persona: DemoPersona) => void }>) => (
@@ -214,14 +246,33 @@ const ApplicantWorkspace = ({ client }: Readonly<{ client: KycApiClient }>) => {
     setNotice(undefined);
     const data = new FormData(event.currentTarget);
     try {
+      const responseOption = formString(data, 'responseOption') as InformationResponseOption;
+      const requested = new Set(summary.pendingAction.requestedItems);
+      const applicationCorrections =
+        responseOption === 'CORRECTED_APPLICATION'
+          ? {
+              ...(requested.has('FULL_NAME') ? { fullName: formString(data, 'fullName') } : {}),
+              ...(requested.has('DATE_OF_BIRTH') ? { dateOfBirth: formString(data, 'dateOfBirth') } : {}),
+              ...(requested.has('DOCUMENT_NUMBER') ? { documentNumber: formString(data, 'documentNumber') } : {}),
+              ...(requested.has('EXPIRATION_DATE') ? { expirationDate: formString(data, 'expirationDate') } : {}),
+              ...(requested.has('RESIDENTIAL_ADDRESS')
+                ? {
+                    residentialAddress: {
+                      line1: formString(data, 'correctionLine1'),
+                      city: formString(data, 'correctionCity'),
+                      region: formString(data, 'correctionRegion'),
+                      postalCode: formString(data, 'correctionPostalCode'),
+                      country: formString(data, 'correctionCountry').toUpperCase(),
+                    },
+                  }
+                : {}),
+            }
+          : undefined;
       setSummary(
         await client.submitInformation(caseId, {
           requestId: summary.pendingAction.requestId,
-          responseOption: formString(data, 'responseOption') as
-            | 'IDENTITY_DOCUMENT'
-            | 'IDENTITY_DOCUMENT_BACK'
-            | 'PROOF_OF_ADDRESS'
-            | 'READABLE_DOCUMENT',
+          responseOption,
+          ...(applicationCorrections === undefined ? {} : { applicationCorrections }),
           documentIds: [latestDocument.documentId],
         }),
       );
@@ -290,6 +341,10 @@ const ApplicantWorkspace = ({ client }: Readonly<{ client: KycApiClient }>) => {
   }
 
   const isFinal = terminalStatuses.has(summary?.status ?? '');
+  const requestedItems =
+    summary?.pendingAction?.type === 'MISSING_INFORMATION' ? summary.pendingAction.requestedItems : [];
+  const requestedItemSet = new Set(requestedItems);
+  const informationResponseOptions = responseOptionsFor(requestedItems);
   return (
     <div className="workspace-grid">
       <div className="workspace-stack">
@@ -323,13 +378,62 @@ const ApplicantWorkspace = ({ client }: Readonly<{ client: KycApiClient }>) => {
             <form className="compact-form" onSubmit={submitInformation}>
               <label className="field">
                 <span>Response type</span>
-                <select defaultValue="READABLE_DOCUMENT" name="responseOption">
-                  <option value="READABLE_DOCUMENT">Readable replacement</option>
-                  <option value="IDENTITY_DOCUMENT">Identity document</option>
-                  <option value="IDENTITY_DOCUMENT_BACK">Identity document back</option>
-                  <option value="PROOF_OF_ADDRESS">Proof of address</option>
+                <select defaultValue={informationResponseOptions[0]} name="responseOption">
+                  {informationResponseOptions.map(option => (
+                    <option key={option} value={option}>
+                      {responseOptionLabels[option]}
+                    </option>
+                  ))}
                 </select>
               </label>
+              {requestedItemSet.has('FULL_NAME') ? (
+                <label className="field field--wide">
+                  <span>Corrected full name</span>
+                  <input name="fullName" required />
+                </label>
+              ) : null}
+              {requestedItemSet.has('DATE_OF_BIRTH') ? (
+                <label className="field">
+                  <span>Corrected date of birth</span>
+                  <input name="dateOfBirth" required type="date" />
+                </label>
+              ) : null}
+              {requestedItemSet.has('DOCUMENT_NUMBER') ? (
+                <label className="field">
+                  <span>Corrected document number</span>
+                  <input name="documentNumber" required />
+                </label>
+              ) : null}
+              {requestedItemSet.has('EXPIRATION_DATE') ? (
+                <label className="field">
+                  <span>Corrected expiration date</span>
+                  <input name="expirationDate" required type="date" />
+                </label>
+              ) : null}
+              {requestedItemSet.has('RESIDENTIAL_ADDRESS') ? (
+                <>
+                  <label className="field field--wide">
+                    <span>Corrected address line</span>
+                    <input name="correctionLine1" required />
+                  </label>
+                  <label className="field">
+                    <span>Corrected city</span>
+                    <input name="correctionCity" required />
+                  </label>
+                  <label className="field">
+                    <span>Corrected state or region</span>
+                    <input name="correctionRegion" required />
+                  </label>
+                  <label className="field">
+                    <span>Corrected postal code</span>
+                    <input name="correctionPostalCode" required />
+                  </label>
+                  <label className="field">
+                    <span>Corrected country code</span>
+                    <input maxLength={2} name="correctionCountry" required />
+                  </label>
+                </>
+              ) : null}
               <button className="primary" disabled={busy || uploads.length === 0} type="submit">
                 Submit latest upload
               </button>

@@ -181,6 +181,7 @@ const scenarios = Object.freeze({
       'Document number: SYNTHETIC-001',
       'Expiration date: 2030-01-01',
       'Nationality: US',
+      'Residential address: 100 Example Avenue, Sample City, NY 10001',
     ],
     { fields: lowRiskIdentity, quality: 'READABLE', missingFields: [], warnings: [] },
   ),

@@ -354,6 +354,86 @@ describe('companion portal in Chromium', () => {
     await expect.element(page.getByText('document unreadable')).toBeVisible();
   });
 
+  it('submits only the requested field corrections for a field-level pending action', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    window.location.hash = '#/cases/case-opaque-fields';
+    let resolved = false;
+    const missing = {
+      schemaVersion: '1.0',
+      caseId: 'case-opaque-fields',
+      status: 'MISSING_INFORMATION',
+      workflowStatus: 'SUSPENDED',
+      documentReadiness: { storedDocumentCount: 1, canStart: false },
+      pendingAction: {
+        type: 'MISSING_INFORMATION',
+        requestId: 'request-opaque-fields',
+        requestedItems: ['FULL_NAME', 'DATE_OF_BIRTH', 'DOCUMENT_NUMBER', 'EXPIRATION_DATE'],
+        safeMessage: 'Visible identity fields are required.',
+        expiresAt: '2026-08-22T12:00:00.000Z',
+      },
+      updatedAt: '2026-08-21T12:00:00.000Z',
+    };
+    const request = vi.fn<typeof fetch>((url, init = {}) => {
+      const path = new URL(urlOf(url)).pathname;
+      if (path === '/api/v1/demo/session') return Promise.resolve(json(session('applicant')));
+      if (path === '/api/v1/kyc/cases/case-opaque-fields' && init.method === undefined) {
+        return Promise.resolve(
+          json(resolved ? { ...missing, status: 'COMPLIANCE_REVIEW', pendingAction: null } : missing),
+        );
+      }
+      if (path.endsWith('/documents') && init.method === 'POST') {
+        return Promise.resolve(
+          json(
+            {
+              schemaVersion: '1.0',
+              caseId: 'case-opaque-fields',
+              documentId: 'document-opaque-fields',
+              status: 'MISSING_INFORMATION',
+              mimeType: 'application/pdf',
+              sizeBytes: 32,
+              pageCount: 1,
+            },
+            201,
+          ),
+        );
+      }
+      if (path.endsWith('/information') && init.method === 'POST') {
+        resolved = true;
+        return Promise.resolve(json({ ...missing, status: 'COMPLIANCE_REVIEW', pendingAction: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request ${init.method ?? 'GET'} ${path}`));
+    });
+    mounted = mount(new KycApiClient('http://api.example.test', request));
+
+    await expect.element(page.getByLabelText('Response type')).toHaveValue('CORRECTED_APPLICATION');
+    await expect.element(page.getByText('Readable replacement')).not.toBeInTheDocument();
+    await page.getByLabelText('Corrected full name').fill('Synthetic Public Applicant');
+    await page.getByLabelText('Corrected date of birth').fill('1952-10-07');
+    await page.getByLabelText('Corrected document number').fill('PUBLIC-Q7747-DEMO');
+    await page.getByLabelText('Corrected expiration date').fill('2030-01-01');
+    await page
+      .getByLabelText('PDF, JPEG, or PNG')
+      .upload(new File(['%PDF-synthetic'], 'replacement.pdf', { type: 'application/pdf' }));
+    await page.getByRole('button', { name: 'Upload document' }).click();
+    await page.getByRole('button', { name: 'Submit latest upload' }).click();
+
+    const informationCall = request.mock.calls.find(([url, init]) => {
+      const path = new URL(urlOf(url)).pathname;
+      return path.endsWith('/information') && init?.method === 'POST';
+    });
+    const body = informationCall?.[1]?.body;
+    if (typeof body !== 'string') throw new Error('Expected a JSON information response');
+    expect(JSON.parse(body)).toMatchObject({
+      responseOption: 'CORRECTED_APPLICATION',
+      applicationCorrections: {
+        fullName: 'Synthetic Public Applicant',
+        dateOfBirth: '1952-10-07',
+        documentNumber: 'PUBLIC-Q7747-DEMO',
+        expirationDate: '2030-01-01',
+      },
+    });
+  });
+
   it('opens a senior review from an opaque hash route and records a rejection note', async () => {
     window.location.hash = '#/reviews/review-senior-1';
     const seniorReview = {

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
@@ -10,6 +10,12 @@ type Service = Readonly<{
   port: number;
   url: string;
   environment?: NodeJS.ProcessEnv;
+}>;
+
+type ManagedChild = Readonly<{
+  child: ChildProcess;
+  rootPid: number | undefined;
+  processIds: Set<number>;
 }>;
 
 const scriptRoot = resolve(import.meta.dirname, '..');
@@ -94,17 +100,109 @@ for (const service of services) console.log(`- ${service.name}: ${service.url}`)
 
 const npmEntry = process.env.npm_execpath;
 const npmExecutable = npmEntry === undefined ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
-const children = new Map<string, ChildProcess>();
+const children = new Map<string, ManagedChild>();
 let shuttingDown = false;
+let forceShutdownTimer: NodeJS.Timeout | undefined;
+let shutdownCheckTimer: NodeJS.Timeout | undefined;
 
-const terminate = (child: ChildProcess, signal: NodeJS.Signals): void => {
-  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+const discoverProcessIds = (rootPid: number): ReadonlySet<number> => {
+  const processIds = new Set<number>([rootPid]);
   try {
-    if (process.platform === 'win32') child.kill(signal);
-    else process.kill(-child.pid, signal);
+    const processRows = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' });
+    const childrenByParent = new Map<number, number[]>();
+    for (const row of processRows.split('\n')) {
+      const [pidValue, parentPidValue] = row.trim().split(/\s+/u);
+      const pid = Number(pidValue);
+      const parentPid = Number(parentPidValue);
+      if (![pid, parentPid].every(Number.isInteger)) continue;
+      const children = childrenByParent.get(parentPid) ?? [];
+      children.push(pid);
+      childrenByParent.set(parentPid, children);
+    }
+
+    const pending = [rootPid];
+    const visited = new Set<number>();
+    while (pending.length > 0) {
+      const parentPid = pending.pop();
+      if (parentPid === undefined || visited.has(parentPid)) continue;
+      visited.add(parentPid);
+      for (const processId of childrenByParent.get(parentPid) ?? []) {
+        processIds.add(processId);
+        pending.push(processId);
+      }
+    }
   } catch {
-    // The process may have exited between the state check and signal delivery.
+    // The root process is still available when descendant discovery is unavailable.
   }
+  return processIds;
+};
+
+const refreshProcessIds = (managedChild: ManagedChild): void => {
+  if (process.platform === 'win32' || managedChild.rootPid === undefined) return;
+  for (const processId of discoverProcessIds(managedChild.rootPid)) {
+    managedChild.processIds.add(processId);
+  }
+};
+
+const terminate = (managedChild: ManagedChild, signal: NodeJS.Signals): void => {
+  const { rootPid } = managedChild;
+  if (rootPid === undefined) return;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(rootPid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
+        stdio: 'ignore',
+      });
+    } else {
+      refreshProcessIds(managedChild);
+      for (const processId of [...managedChild.processIds].reverse()) {
+        try {
+          process.kill(processId, signal);
+        } catch {
+          // This process has already stopped.
+        }
+      }
+    }
+  } catch {
+    // The process tree may have exited between signal attempts.
+  }
+};
+
+const isRunning = (managedChild: ManagedChild): boolean => {
+  const { child, rootPid } = managedChild;
+  if (rootPid === undefined) return false;
+  if (process.platform === 'win32') {
+    return child.exitCode === null && child.signalCode === null;
+  }
+  refreshProcessIds(managedChild);
+  for (const processId of managedChild.processIds) {
+    try {
+      process.kill(processId, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return true;
+    }
+  }
+  return false;
+};
+
+const stopShutdownTimers = (): void => {
+  if (forceShutdownTimer !== undefined) clearTimeout(forceShutdownTimer);
+  if (shutdownCheckTimer !== undefined) clearInterval(shutdownCheckTimer);
+  forceShutdownTimer = undefined;
+  shutdownCheckTimer = undefined;
+};
+
+const scheduleForcedShutdown = (): void => {
+  forceShutdownTimer = setTimeout(() => {
+    for (const child of children.values()) terminate(child, 'SIGKILL');
+    if (shutdownCheckTimer !== undefined) clearInterval(shutdownCheckTimer);
+    shutdownCheckTimer = undefined;
+  }, 5_000);
+  shutdownCheckTimer = setInterval(() => {
+    if ([...children.values()].some(isRunning)) return;
+    stopShutdownTimers();
+  }, 50);
+  shutdownCheckTimer.unref();
 };
 
 const shutdown = (signal: NodeJS.Signals, exitCode: number): void => {
@@ -112,35 +210,38 @@ const shutdown = (signal: NodeJS.Signals, exitCode: number): void => {
   shuttingDown = true;
   process.exitCode = exitCode;
   for (const child of children.values()) terminate(child, signal);
-  const force = setTimeout(() => {
-    for (const child of children.values()) terminate(child, 'SIGKILL');
-  }, 5_000);
-  force.unref();
+  scheduleForcedShutdown();
 };
 
 process.once('SIGINT', () => shutdown('SIGINT', 130));
 process.once('SIGTERM', () => shutdown('SIGTERM', 143));
+process.once('SIGHUP', () => shutdown('SIGHUP', 129));
 
 await new Promise<void>(resolvePromise => {
   let active = services.length;
   for (const service of services) {
     const child = spawn(npmExecutable, [...(npmEntry === undefined ? [] : [npmEntry]), 'run', service.script], {
       cwd: repositoryRoot,
-      detached: process.platform !== 'win32',
       env: { ...process.env, ...service.environment },
       stdio: 'inherit',
     });
-    children.set(service.name, child);
+    children.set(service.name, {
+      child,
+      rootPid: child.pid,
+      processIds: new Set(child.pid === undefined ? [] : [child.pid]),
+    });
     child.once('error', error => {
       console.error(`${service.name} failed to start:`, error.message);
       shutdown('SIGTERM', 1);
     });
     child.once('exit', (code, signal) => {
-      active -= 1;
       if (!shuttingDown) {
         console.error(`${service.name} stopped unexpectedly (${signal ?? String(code ?? 1)})`);
         shutdown('SIGTERM', code === null || code === 0 ? 1 : code);
       }
+    });
+    child.once('close', () => {
+      active -= 1;
       if (active === 0) resolvePromise();
     });
   }

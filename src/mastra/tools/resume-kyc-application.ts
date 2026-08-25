@@ -165,7 +165,10 @@ export const validateInformationResponse = (
 ): void => {
   const requested = new Set(request.requestedItems);
   if (responseOption === 'CORRECTED_APPLICATION') {
-    const corrections = applicationCorrectionsSchema.parse(applicationCorrections);
+    const corrections = normalizeApplicationCorrections(applicationCorrections);
+    if (corrections === null) {
+      throw new DomainInvariantError('Application corrections are required');
+    }
     const incompatible = Object.keys(corrections).some(
       field => !requested.has(correctionItemByField[field as keyof typeof correctionItemByField]),
     );
@@ -181,6 +184,15 @@ export const validateInformationResponse = (
   if (!requested.has(expectedItem)) {
     throw new DomainInvariantError('Information response does not match the requested items');
   }
+};
+
+const normalizeApplicationCorrections = (
+  corrections: ApplicationCorrections | null,
+): ApplicationCorrections | null => {
+  if (corrections === null) return null;
+  return applicationCorrectionsSchema.parse(
+    Object.fromEntries(Object.entries(corrections).filter(([, value]) => value !== undefined)),
+  );
 };
 
 const loadPending = async (dependencies: ResumeKycDependencies, threadId: string) =>
@@ -586,7 +598,7 @@ export const createSubmitKycInformationTool = (dependencies: ResumeKycDependenci
           id: 'studio-applicant',
           roles: ['applicant'],
         };
-        const applicationCorrections = input.applicationCorrections ?? null;
+        const applicationCorrections = normalizeApplicationCorrections(input.applicationCorrections ?? null);
         const responseQuality = input.fixtureResponseQuality ?? 'COMPLETE';
         const selected = await selectCommandForPayload(
           dependencies,

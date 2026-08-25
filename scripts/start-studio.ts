@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,22 +33,135 @@ const child = spawn(process.execPath, [cliEntry, 'dev'], {
   stdio: 'inherit',
 });
 
-const forwardSignal = (signal: NodeJS.Signals): void => {
-  if (!child.killed) child.kill(signal);
+type ManagedChild = Readonly<{
+  child: ChildProcess;
+  rootPid: number | undefined;
+  processIds: Set<number>;
+}>;
+
+const managedChild: ManagedChild = {
+  child,
+  rootPid: child.pid,
+  processIds: new Set(child.pid === undefined ? [] : [child.pid]),
+};
+let shuttingDown = false;
+let forceShutdownTimer: NodeJS.Timeout | undefined;
+let shutdownCheckTimer: NodeJS.Timeout | undefined;
+
+const discoverProcessIds = (rootPid: number): ReadonlySet<number> => {
+  const processIds = new Set<number>([rootPid]);
+  try {
+    const processRows = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' });
+    const childrenByParent = new Map<number, number[]>();
+    for (const row of processRows.split('\n')) {
+      const [pidValue, parentPidValue] = row.trim().split(/\s+/u);
+      const pid = Number(pidValue);
+      const parentPid = Number(parentPidValue);
+      if (![pid, parentPid].every(Number.isInteger)) continue;
+      const children = childrenByParent.get(parentPid) ?? [];
+      children.push(pid);
+      childrenByParent.set(parentPid, children);
+    }
+
+    const pending = [rootPid];
+    const visited = new Set<number>();
+    while (pending.length > 0) {
+      const parentPid = pending.pop();
+      if (parentPid === undefined || visited.has(parentPid)) continue;
+      visited.add(parentPid);
+      for (const processId of childrenByParent.get(parentPid) ?? []) {
+        processIds.add(processId);
+        pending.push(processId);
+      }
+    }
+  } catch {
+    // The root process is still available when descendant discovery is unavailable.
+  }
+  return processIds;
 };
 
-process.once('SIGINT', () => forwardSignal('SIGINT'));
-process.once('SIGTERM', () => forwardSignal('SIGTERM'));
+const refreshProcessIds = (): void => {
+  if (process.platform === 'win32' || managedChild.rootPid === undefined) return;
+  for (const processId of discoverProcessIds(managedChild.rootPid)) {
+    managedChild.processIds.add(processId);
+  }
+};
+
+const terminate = (signal: NodeJS.Signals): void => {
+  const { rootPid } = managedChild;
+  if (rootPid === undefined) return;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(rootPid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
+        stdio: 'ignore',
+      });
+    } else {
+      refreshProcessIds();
+      for (const processId of [...managedChild.processIds].reverse()) {
+        try {
+          process.kill(processId, signal);
+        } catch {
+          // This process has already stopped.
+        }
+      }
+    }
+  } catch {
+    // The Studio process tree may have exited between signal attempts.
+  }
+};
+
+const isRunning = (): boolean => {
+  const { rootPid } = managedChild;
+  if (rootPid === undefined) return false;
+  if (process.platform === 'win32') {
+    return child.exitCode === null && child.signalCode === null;
+  }
+  refreshProcessIds();
+  for (const processId of managedChild.processIds) {
+    try {
+      process.kill(processId, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return true;
+    }
+  }
+  return false;
+};
+
+const stopShutdownTimers = (): void => {
+  if (forceShutdownTimer !== undefined) clearTimeout(forceShutdownTimer);
+  if (shutdownCheckTimer !== undefined) clearInterval(shutdownCheckTimer);
+  forceShutdownTimer = undefined;
+  shutdownCheckTimer = undefined;
+};
+
+const shutdown = (signal: NodeJS.Signals, exitCode: number): void => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  process.exitCode = exitCode;
+  terminate(signal);
+  forceShutdownTimer = setTimeout(() => {
+    terminate('SIGKILL');
+    if (shutdownCheckTimer !== undefined) clearInterval(shutdownCheckTimer);
+    shutdownCheckTimer = undefined;
+  }, 5_000);
+  shutdownCheckTimer = setInterval(() => {
+    if (isRunning()) return;
+    stopShutdownTimers();
+  }, 50);
+  shutdownCheckTimer.unref();
+};
+
+process.once('SIGINT', () => shutdown('SIGINT', 130));
+process.once('SIGTERM', () => shutdown('SIGTERM', 143));
+process.once('SIGHUP', () => shutdown('SIGHUP', 129));
 
 child.once('error', error => {
   console.error('Unable to start the local Studio process.', error);
-  process.exitCode = 1;
+  shutdown('SIGTERM', 1);
 });
 
 child.once('exit', (code, signal) => {
-  if (signal !== null) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exitCode = code ?? 1;
+  if (shuttingDown) return;
+  shutdown(signal ?? 'SIGTERM', signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : (code ?? 1));
 });
