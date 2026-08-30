@@ -74,6 +74,6 @@ npm run build
 
 [Mastra templates](https://mastra.ai/templates) are ready-to-use projects that show what you can build - clone one, explore it, and make it yours. They live in the [Mastra monorepo](https://github.com/mastra-ai/mastra) and are automatically synced to standalone repositories for easier cloning.
 
-Want to contribute? See [CONTRIBUTING.md](https://github.com/mastra-ai/mastra/blob/main/templates/template-kyc-customer-onboarding/CONTRIBUTING.md).
+Want to contribute? See [CONTRIBUTING.md](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/CONTRIBUTING.md).
 
 This is a synthetic reference implementation, not a certified KYC product, legal advice or a substitute for your compliance program. A screening candidate is never treated as a confirmed identity match, and the workflow does not invent final compliance decisions.
