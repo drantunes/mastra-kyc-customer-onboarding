@@ -23,7 +23,7 @@ Use Mastra Studio, call the API, or open the included test portal to try three p
 
 Mastra Studio, the API, and the portal are equal entry points to the same durable workflow.
 
-You can connect this workflow to React, Next.js, or Vue applications with the [Mastra Client SDK](https://mastra.ai/en/docs/deployment/client), or use agentic UI libraries such as AI SDK UI, CopilotKit, and Assistant UI.
+You can connect this workflow to React, Next.js, or Vue applications with the [Mastra Client SDK](https://mastra.ai/reference/client-js/mastra-client), or use agentic UI libraries such as AI SDK UI, CopilotKit, and Assistant UI.
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ You can connect this workflow to React, Next.js, or Vue applications with the [M
 
 Select **KYC Onboarding Agent** and ask it to start the low-risk onboarding scenario. The workflow completes intake, extraction, four parallel checks, evidence aggregation, and deterministic risk assessment before pausing for compliance review.
 
-The sample inputs in [`inputs-sample`](inputs-sample) cover the standard, missing-information, and sanctions-review paths.
+The sample inputs in [`inputs-sample`](https://github.com/drantunes/mastra-kyc-customer-onboarding/tree/main/inputs-sample) cover the standard, missing-information, and sanctions-review paths.
 
 ## How it works
 
@@ -53,11 +53,11 @@ Provider registries keep implementation selection outside the workflow graph. Lo
 
 ## Making it yours
 
-- [Configuration and optional integrations](docs/configuration.md)
-- [Customize providers](docs/customize-providers.md)
-- [Customize policy and jurisdiction](docs/customize-policy.md)
-- [Add a scenario](docs/add-scenario.md)
-- [Use the API and portal](docs/use-api.md)
+- [Configuration and optional integrations](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/docs/configuration.md)
+- [Customize providers](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/docs/customize-providers.md)
+- [Customize policy and jurisdiction](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/docs/customize-policy.md)
+- [Add a scenario](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/docs/add-scenario.md)
+- [Use the API and portal](https://github.com/drantunes/mastra-kyc-customer-onboarding/blob/main/docs/use-api.md)
 
 As a template, you need to adapt it to your company's production workflow and implement the required integrations.
 
